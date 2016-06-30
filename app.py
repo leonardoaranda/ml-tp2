@@ -6,10 +6,14 @@ from nltk import bigrams
 from collections import defaultdict
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn import preprocessing
 from sklearn.cross_validation import train_test_split
 from sklearn import metrics
 import numpy as np
+
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2
 
 
 def tokenize(corpus):
@@ -39,7 +43,7 @@ def prepare(corpus):
 
 
 
-data = pd.read_csv('tp2-work.csv')
+data = pd.read_csv('tp2-work.csv')[1:100]
 docs = []
 clean_docs = []
 bigrams_count = defaultdict(int)
@@ -57,24 +61,20 @@ for i,row in data.iterrows():
 			bigrams_count[kw] +=1
 		docs.append(doc)
 
-for d in docs:
-	d1 = d.copy()
-	for k in d:
-		if k in bigrams_count:
-			if bigrams_count[k] < 10:
-				d1.pop(k,None)
-	clean_docs.append(d1)
 
 
+print docs
 
+dataset = pd.DataFrame(docs)
 
-
-dataset = pd.DataFrame(clean_docs)
 dataset = dataset.where((pd.notnull(dataset)), None)
 
 labels = dataset['label'].values.T.tolist()
 result = dataset.copy()
 result = result.drop('label', 1, errors='ignore')
+
+n_features = len(result.columns)
+
 encoders = {}
 for column in result.columns:
     if result.dtypes[column] == np.object:
@@ -82,17 +82,23 @@ for column in result.columns:
         result[column] = encoders[column].fit_transform(result[column])
 features = result.values.tolist()
 
+k_values = [5,10,20,30,40,50,60,70,80,90,100]
 
-x_train, x_test, y_train, y_test = train_test_split(features, labels, test_size=0.3)
-
-classifier = MultinomialNB()
-
-classifier.fit(x_train, y_train)
+for k in k_values:
+	featureSelector = SelectKBest(score_func=chi2, k=k)
+	features_new = featureSelector.fit_transform(features, labels)
 
 
-y_predicted = classifier.predict(x_test)
-y_probabilities = classifier.predict_proba(x_test)[:, 1]
-classification_report = metrics.classification_report(y_test, y_predicted)
-confusion_matrix = metrics.confusion_matrix(y_test, y_predicted)
+	x_train, x_test, y_train, y_test = train_test_split(features_new, labels, test_size=0.3)
 
-print classification_report
+	classifier = RandomForestClassifier(n_estimators=200)
+
+	classifier.fit(x_train, y_train)
+
+
+	y_predicted = classifier.predict(x_test)
+	y_probabilities = classifier.predict_proba(x_test)[:, 1]
+	classification_report = metrics.classification_report(y_test, y_predicted)
+	confusion_matrix = metrics.confusion_matrix(y_test, y_predicted)
+
+	print classification_report
