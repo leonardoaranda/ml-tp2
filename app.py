@@ -11,94 +11,92 @@ from sklearn import preprocessing
 from sklearn.cross_validation import train_test_split
 from sklearn import metrics
 import numpy as np
-
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
 
+class KeywordGenerator():
 
-def tokenize(corpus):
-	tokenizer = RegexpTokenizer(r'\w+')
-	return tokenizer.tokenize(corpus)
+	@staticmethod
+	def tokenize(corpus):
+		tokenizer = RegexpTokenizer(r'\w+')
+		return tokenizer.tokenize(corpus)
 
-def remove_stopwords(words):
-	return filter(lambda x: x not in stopwords.words('spanish'), words)
+	@staticmethod
+	def remove_stopwords(words):
+		return filter(lambda x: x not in stopwords.words('spanish'), words)
 
-def stem(words):
-	stemmer = SnowballStemmer('spanish')
-	stemmed = []
-	for w in words:
-		stemmed.append(stemmer.stem(w))
-	return stemmed
+	@staticmethod
+	def stem(words):
+		stemmer = SnowballStemmer('spanish')
+		stemmed = []
+		for w in words:
+			stemmed.append(stemmer.stem(w))
+		return stemmed
 
-def collocations(words):
-	return bigrams(words)
+	@staticmethod
+	def collocations(words):
+		return bigrams(words)
 
-def prepare(corpus):
-	corpus = corpus.lower()
-	tokenized_corpus = tokenize(corpus)
-	relevant_tokens = remove_stopwords(tokenized_corpus)
-	stemmed_tokens = stem(relevant_tokens)
-	bigrams_tokens = collocations(stemmed_tokens)
-	return bigrams_tokens
-
-
-
-data = pd.read_csv('tp2-work.csv')[1:100]
-docs = []
-clean_docs = []
-bigrams_count = defaultdict(int)
-
-for i,row in data.iterrows():
-	corpus = str(row['des'])
-	label = row['Clase']
-	doc = {}
-	if corpus:
-		corpus_bigrams = list(prepare(corpus.decode('utf-8')))
-		doc['label'] = label
-		for b in corpus_bigrams:
-			kw = b[0].encode('utf-8')+'_'+b[1].encode('utf-8')
-			doc[kw] = 1
-			bigrams_count[kw] +=1
-		docs.append(doc)
+	@staticmethod
+	def prepare(corpus):
+		corpus = corpus.lower()
+		tokenized_corpus = tokenize(corpus)
+		relevant_tokens = remove_stopwords(tokenized_corpus)
+		stemmed_tokens = stem(relevant_tokens)
+		bigrams_tokens = collocations(stemmed_tokens)
+		return bigrams_tokens
 
 
+class KeywordRelevance():
 
-print docs
+	def __init__(self,filename):
+		self.filename = filename
 
-dataset = pd.DataFrame(docs)
+	def build_dataframe(self):
+		documents = []
+		data = pd.read_csv(self.filename)
+		for i,row in data.iterrows():
+			document = {}
+			document['label'] = row['clase']
+			document[row['palabra']] = row['cant']
+			documents.append(document)
+		self.dataframe = pd.DataFrame(documents)
+		self.dataframe = self.dataframe.where((pd.notnull(self.dataframe)), None)
+		self.dataframe = self.dataframe.groupby(['label']).sum()
 
-dataset = dataset.where((pd.notnull(dataset)), None)
+	def extract_features(self):
+		self.build_dataframe()
+		self.labels = list(self.dataframe.index)
+		self.features = self.encode_features()
 
-labels = dataset['label'].values.T.tolist()
-result = dataset.copy()
-result = result.drop('label', 1, errors='ignore')
+		features_relevance = chi2(self.features,self.labels)
 
-n_features = len(result.columns)
+		results = []
+		i=0
+		for f in features_relevance[1]:
+			relevance = {
+				'feature' : self.dataframe.columns[i],
+				'x_2' : features_relevance[0][i],
+				'p_value' : f
+			}
+			results.append(relevance)
+			i+=1
+		return results
 
-encoders = {}
-for column in result.columns:
-    if result.dtypes[column] == np.object:
-        encoders[column] = preprocessing.LabelEncoder()
-        result[column] = encoders[column].fit_transform(result[column])
-features = result.values.tolist()
+	def encode_features(self):
+		result = self.dataframe.copy()
+		result = result.drop('label', 1, errors='ignore')
 
-k_values = [5,10,20,30,40,50,60,70,80,90,100]
-
-for k in k_values:
-	featureSelector = SelectKBest(score_func=chi2, k=k)
-	features_new = featureSelector.fit_transform(features, labels)
-
-
-	x_train, x_test, y_train, y_test = train_test_split(features_new, labels, test_size=0.3)
-
-	classifier = RandomForestClassifier(n_estimators=200)
-
-	classifier.fit(x_train, y_train)
+		encoders = {}
+		for column in result.columns:
+		    if result.dtypes[column] == np.object:
+		        encoders[column] = preprocessing.LabelEncoder()
+		        result[column] = encoders[column].fit_transform(result[column])
+		features = result.values.tolist()
+		return features
 
 
-	y_predicted = classifier.predict(x_test)
-	y_probabilities = classifier.predict_proba(x_test)[:, 1]
-	classification_report = metrics.classification_report(y_test, y_predicted)
-	confusion_matrix = metrics.confusion_matrix(y_test, y_predicted)
-
-	print classification_report
+kr = KeywordRelevance('tp2-palabrasXclase-may200.csv')
+kr.build_dataframe()
+results = kr.extract_features()
+pd.DataFrame(results).to_csv('features_relevance.csv')
