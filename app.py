@@ -4,14 +4,8 @@ from nltk.tokenize import RegexpTokenizer
 from nltk.stem import SnowballStemmer
 from nltk import bigrams
 from collections import defaultdict
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
 from sklearn import preprocessing
-from sklearn.cross_validation import train_test_split
-from sklearn import metrics
 import numpy as np
-from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
 
 class KeywordGenerator():
